@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <sdbus-c++/IConnection.h>
+#include <sdbus-c++/IProxy.h>
 
 struct PairedDevice {
     std::string alias;
@@ -25,6 +27,9 @@ public:
 
 private:
     ReceiveCallback receiveCallback;
+    sdbus::IConnection* connection_ = nullptr;
+    std::unique_ptr<sdbus::IProxy> deviceProxy_;
+    std::string txCharPath_;
     bool connected = false;
 };
 
