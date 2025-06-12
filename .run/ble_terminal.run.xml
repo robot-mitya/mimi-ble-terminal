@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ble_terminal" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="--robot-name=&quot;BBC micro:bit&quot;" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="BleTerminal" TARGET_NAME="ble_terminal" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="BleTerminal" RUN_TARGET_NAME="ble_terminal">
+    <method v="2">
+      <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+    </method>
+  </configuration>
+</component>
