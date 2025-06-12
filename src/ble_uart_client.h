@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <iostream>
+#include <queue>
 #include <sdbus-c++/IConnection.h>
 #include <sdbus-c++/IProxy.h>
 
@@ -23,14 +25,20 @@ public:
     std::vector<PairedDevice> listPairedDevices();
     bool connectTo(const std::string& alias, ReceiveCallback onReceive);
     void disconnect();
+    sdbus::IConnection& connection();
     bool send(const std::string& text);
-
+    void processIncomingMessages(std::ostream& out = std::cout);
 private:
-    ReceiveCallback receiveCallback;
     sdbus::IConnection* connection_ = nullptr;
     std::unique_ptr<sdbus::IProxy> deviceProxy_;
+    std::unique_ptr<sdbus::IProxy> rxProxy_;
     std::string txCharPath_;
-    bool connected = false;
+    std::string rxCharPath_;
+    bool connected_ = false;
+
+    std::mutex rxQueueMutex_;
+    std::queue<std::string> rxQueue_;
+    std::function<void(const std::string&)> receiveCallback_;
 };
 
 #endif //BLE_UART_CLIENT_H

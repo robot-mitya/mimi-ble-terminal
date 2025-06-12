@@ -1,11 +1,16 @@
 #include "ble_uart_client.h"
+
+#include <iomanip>
 #include <sdbus-c++/sdbus-c++.h>
-#include <iostream>
 
 using namespace sdbus;
 
 BleUartClient::BleUartClient() = default;
-BleUartClient::~BleUartClient() = default;
+
+BleUartClient::~BleUartClient() {
+    disconnect();
+    delete connection_;
+}
 
 std::vector<PairedDevice> BleUartClient::listPairedDevices() {
     std::vector<PairedDevice> devices;
@@ -19,7 +24,6 @@ std::vector<PairedDevice> BleUartClient::listPairedDevices() {
     using ObjectMap = std::map<sdbus::ObjectPath, InterfaceMap>;
 
     ObjectMap managedObjects;
-
     auto method = proxy->createMethodCall("org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
     auto reply = proxy->callMethod(method);
     reply >> managedObjects;
@@ -57,7 +61,6 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
 
     const std::string& devPath = it->path;
     connection_ = sdbus::createSystemBusConnection().release();
-
     deviceProxy_ = sdbus::createProxy(*connection_, "org.bluez", devPath);
     deviceProxy_->finishRegistration();
 
@@ -69,8 +72,7 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
         return false;
     }
 
-    // Ищем TX characteristic по UUID
-    sdbus::ObjectPath txPath;
+    // Ищем TX и RX characteristics
     using ObjectMap = std::map<sdbus::ObjectPath, std::map<std::string, std::map<std::string, sdbus::Variant>>>;
     ObjectMap objects;
 
@@ -82,6 +84,7 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     reply >> objects;
 
     const std::string TX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+    const std::string RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
     for (const auto& [path, ifaces] : objects) {
         auto itGatt = ifaces.find("org.bluez.GattCharacteristic1");
@@ -89,33 +92,84 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
             const auto& props = itGatt->second;
             auto uuidIt = props.find("UUID");
             if (uuidIt != props.end()) {
-                std::string uuid = uuidIt->second.get<std::string>();
+                auto uuid = uuidIt->second.get<std::string>();
                 std::transform(uuid.begin(), uuid.end(), uuid.begin(), ::tolower);
-                if (uuid == TX_UUID) {
+
+                if (uuid == TX_UUID && txCharPath_.empty())
                     txCharPath_ = path;
-                    break;
-                }
+
+                if (uuid == RX_UUID && rxCharPath_.empty())
+                    rxCharPath_ = path;
             }
         }
     }
 
-    if (txCharPath_.empty()) {
-        std::cerr << "❌ TX Characteristic not found\n";
+    if (txCharPath_.empty() || rxCharPath_.empty()) {
+        std::cerr << "❌ TX or RX characteristic not found\n";
         return false;
     }
 
+    receiveCallback_ = std::move(onReceive);
+
+    rxProxy_ = sdbus::createProxy(*connection_, "org.bluez", rxCharPath_);
+    rxProxy_->uponSignal("PropertiesChanged")
+        .onInterface("org.freedesktop.DBus.Properties")
+        .call([this](const std::string& interface,
+                     const std::map<std::string, sdbus::Variant>& changed,
+                     const std::vector<std::string>&) {
+            if (interface == "org.bluez.GattCharacteristic1") {
+                auto it = changed.find("Value");
+                if (it != changed.end()) {
+                    const auto& vec = it->second.get<std::vector<uint8_t>>();
+                    std::string rawMessage(vec.begin(), vec.end());
+                    std::string message;
+                    std::copy_if(rawMessage.begin(), rawMessage.end(), std::back_inserter(message),
+                                 [](char c) { return c != '\r' && c != '\n'; });
+                    {
+                        std::lock_guard<std::mutex> lock(rxQueueMutex_);
+                        rxQueue_.push(message);
+                    }
+                }
+            }
+        });
+    rxProxy_->finishRegistration();
+
+    try {
+        rxProxy_->callMethod("StartNotify").onInterface("org.bluez.GattCharacteristic1");
+    } catch (const sdbus::Error& e) {
+        std::cerr << "⚠️ Failed to start notifications: " << e.getMessage() << "\n";
+        return false;
+    }
+
+    connection_->enterEventLoopAsync();
+
+    connected_ = true;
     std::cout << "✅ Connected to " << alias << "\n";
-    connected = true;
     return true;
 }
 
 void BleUartClient::disconnect() {
-    // Заглушка
-    connected = false;
+    if (!connected_) return;
+
+    if (rxProxy_) {
+        try {
+            rxProxy_->callMethod("StopNotify").onInterface("org.bluez.GattCharacteristic1");
+        } catch (...) { /* ignore */ }
+        rxProxy_.reset();
+    }
+
+    if (deviceProxy_) {
+        try {
+            deviceProxy_->callMethod("Disconnect").onInterface("org.bluez.Device1");
+        } catch (...) { }
+        deviceProxy_.reset();
+    }
+
+    connected_ = false;
 }
 
 bool BleUartClient::send(const std::string& text) {
-    if (!connected || txCharPath_.empty()) return false;
+    if (!connected_ || txCharPath_.empty()) return false;
 
     auto charProxy = sdbus::createProxy(*connection_, "org.bluez", txCharPath_);
     charProxy->finishRegistration();
@@ -131,4 +185,22 @@ bool BleUartClient::send(const std::string& text) {
         std::cerr << "❌ Send failed: " << e.getMessage() << "\n";
         return false;
     }
+}
+
+void BleUartClient::processIncomingMessages(std::ostream& out) {
+    std::queue<std::string> pending;
+
+    {
+        std::lock_guard<std::mutex> lock(rxQueueMutex_);
+        std::swap(pending, rxQueue_);
+    }
+
+    while (!pending.empty()) {
+        if (receiveCallback_) receiveCallback_(pending.front());
+        pending.pop();
+    }
+}
+
+sdbus::IConnection& BleUartClient::connection() {
+    return *connection_;
 }
