@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include <iostream>
 #include <queue>
 #include <sdbus-c++/IConnection.h>
 #include <sdbus-c++/IProxy.h>
@@ -17,16 +16,18 @@ struct PairedDevice {
 
 class BleUartClient {
 public:
+    using InfoCallback = std::function<void(const std::string&)>;
+    using ErrorCallback = std::function<void(const std::string&)>;
     using ReceiveCallback = std::function<void(const std::string&)>;
 
-    BleUartClient();
+    BleUartClient(InfoCallback infoCallback, ErrorCallback errorCallback);
     ~BleUartClient();
 
     static std::vector<PairedDevice> listPairedDevices();
     bool connectTo(const std::string& alias, ReceiveCallback onReceive);
     void disconnect();
     [[nodiscard]] bool send(const std::string& text) const;
-    void processIncomingMessages(std::ostream& out = std::cout);
+    void processIncomingMessages();
 private:
     sdbus::IConnection* connection_ = nullptr;
     std::unique_ptr<sdbus::IProxy> deviceProxy_;
@@ -37,6 +38,8 @@ private:
 
     std::mutex rxQueueMutex_;
     std::queue<std::string> rxQueue_;
+    std::function<void(const std::string&)> infoCallback_;
+    std::function<void(const std::string&)> errorCallback_;
     std::function<void(const std::string&)> receiveCallback_;
 };
 

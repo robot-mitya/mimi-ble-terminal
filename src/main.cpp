@@ -36,7 +36,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    BleUartClient client;
+    BleUartClient client(
+        [](const std::string& infoText) {
+            std::cout << infoText;
+        },
+        [](const std::string& errorText) {
+            std::cerr << errorText;
+        }
+    );
     if (!client.connectTo(name, [](const std::string& msg) {
         std::cout << "\r🤖 " << msg << "\n> " << std::flush;
     })) {

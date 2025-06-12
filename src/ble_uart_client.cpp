@@ -2,11 +2,21 @@
 #include "ble_uart_client.h"
 
 #include <iomanip>
+#include <utility>
 #include <sdbus-c++/sdbus-c++.h>
 
 using namespace sdbus;
 
-BleUartClient::BleUartClient() = default;
+template<typename... Args>
+std::string str(Args&&... args)
+{
+    std::ostringstream oss;
+    (oss << ... << std::forward<Args>(args));
+    return oss.str();
+}
+
+BleUartClient::BleUartClient(InfoCallback infoCallback, ErrorCallback errorCallback) :
+    infoCallback_(std::move(infoCallback)), errorCallback_(std::move(errorCallback)) {}
 
 BleUartClient::~BleUartClient() {
     disconnect();
@@ -56,7 +66,7 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     });
 
     if (it == devices.end()) {
-        std::cerr << "❌ Device with alias '" << alias << "' not found\n";
+        errorCallback_(str("❌ Device with alias '", alias, "' not found\n"));
         return false;
     }
 
@@ -66,10 +76,10 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     deviceProxy_->finishRegistration();
 
     try {
-        std::cout << "📡 Connecting to " << alias << "...\n";
+        infoCallback_(str("📡 Connecting to ", alias, "...\n"));
         deviceProxy_->callMethod("Connect").onInterface("org.bluez.Device1");
     } catch (const Error& e) {
-        std::cerr << "❌ Failed to connect: " << e.getName() << " - " << e.getMessage() << "\n";
+        errorCallback_(str("❌ Failed to connect: ", e.getName(), " - ", e.getMessage(), "\n"));
         return false;
     }
 
@@ -106,7 +116,7 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     }
 
     if (txCharPath_.empty() || rxCharPath_.empty()) {
-        std::cerr << "❌ TX or RX characteristic not found\n";
+        errorCallback_(str("❌ TX or RX characteristic not found\n"));
         return false;
     }
 
@@ -138,14 +148,14 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     try {
         rxProxy_->callMethod("StartNotify").onInterface("org.bluez.GattCharacteristic1");
     } catch (const Error& e) {
-        std::cerr << "⚠️ Failed to start notifications: " << e.getMessage() << "\n";
+        errorCallback_(str("⚠️ Failed to start notifications: ", e.getMessage(), "\n"));
         return false;
     }
 
     connection_->enterEventLoopAsync();
 
     connected_ = true;
-    std::cout << "✅ Connected to " << alias << "\n";
+    infoCallback_(str("✅ Connected to ", alias, "\n"));
     return true;
 }
 
@@ -183,13 +193,12 @@ bool BleUartClient::send(const std::string& text) const {
             .withArguments(data, std::map<std::string, Variant>{});
         return true;
     } catch (const Error& e) {
-        std::cerr << "❌ Send failed: " << e.getMessage() << "\n";
+        errorCallback_(str("❌ Send failed: ", e.getMessage(), "\n"));
         return false;
     }
 }
 
-// ReSharper disable once CppParameterNeverUsed
-void BleUartClient::processIncomingMessages(std::ostream& out) {
+void BleUartClient::processIncomingMessages() {
     std::queue<std::string> pending;
 
     {
