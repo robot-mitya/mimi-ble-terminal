@@ -1,3 +1,4 @@
+// ReSharper disable CppTooWideScopeInitStatement
 #include "ble_uart_client.h"
 
 #include <iomanip>
@@ -15,16 +16,16 @@ BleUartClient::~BleUartClient() {
 std::vector<PairedDevice> BleUartClient::listPairedDevices() {
     std::vector<PairedDevice> devices;
 
-    auto connection = sdbus::createSystemBusConnection();
-    auto proxy = sdbus::createProxy(*connection, "org.bluez", "/");
+    const auto connection = createSystemBusConnection();
+    const auto proxy = createProxy(*connection, "org.bluez", "/");
     proxy->finishRegistration();
 
-    using VariantMap = std::map<std::string, sdbus::Variant>;
+    using VariantMap = std::map<std::string, Variant>;
     using InterfaceMap = std::map<std::string, VariantMap>;
-    using ObjectMap = std::map<sdbus::ObjectPath, InterfaceMap>;
+    using ObjectMap = std::map<ObjectPath, InterfaceMap>;
 
     ObjectMap managedObjects;
-    auto method = proxy->createMethodCall("org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+    const auto method = proxy->createMethodCall("org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
     auto reply = proxy->callMethod(method);
     reply >> managedObjects;
 
@@ -33,13 +34,13 @@ std::vector<PairedDevice> BleUartClient::listPairedDevices() {
         if (devIt != interfaces.end()) {
             const auto& props = devIt->second;
 
-            auto pairedIt = props.find("Paired");
-            auto aliasIt  = props.find("Alias");
-            auto addrIt   = props.find("Address");
+            const auto pairedIt = props.find("Paired");
+            const auto aliasIt  = props.find("Alias");
+            const auto addrIt   = props.find("Address");
 
             if (pairedIt != props.end() && pairedIt->second.get<bool>()) {
-                std::string alias   = (aliasIt != props.end()) ? aliasIt->second.get<std::string>() : "(unknown)";
-                std::string address = (addrIt != props.end()) ? addrIt->second.get<std::string>() : "(no address)";
+                const std::string alias   = aliasIt != props.end() ? aliasIt->second.get<std::string>() : "(unknown)";
+                const std::string address = addrIt != props.end() ? addrIt->second.get<std::string>() : "(no address)";
                 devices.push_back({ alias, address, objectPath });
             }
         }
@@ -50,7 +51,7 @@ std::vector<PairedDevice> BleUartClient::listPairedDevices() {
 
 bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceive) {
     auto devices = listPairedDevices();
-    auto it = std::find_if(devices.begin(), devices.end(), [&](const PairedDevice& d) {
+    const auto it = std::find_if(devices.begin(), devices.end(), [&](const PairedDevice& d) {
         return d.alias == alias;
     });
 
@@ -60,26 +61,26 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     }
 
     const std::string& devPath = it->path;
-    connection_ = sdbus::createSystemBusConnection().release();
-    deviceProxy_ = sdbus::createProxy(*connection_, "org.bluez", devPath);
+    connection_ = createSystemBusConnection().release();
+    deviceProxy_ = createProxy(*connection_, "org.bluez", devPath);
     deviceProxy_->finishRegistration();
 
     try {
         std::cout << "📡 Connecting to " << alias << "...\n";
         deviceProxy_->callMethod("Connect").onInterface("org.bluez.Device1");
-    } catch (const sdbus::Error& e) {
+    } catch (const Error& e) {
         std::cerr << "❌ Failed to connect: " << e.getName() << " - " << e.getMessage() << "\n";
         return false;
     }
 
     // Ищем TX и RX characteristics
-    using ObjectMap = std::map<sdbus::ObjectPath, std::map<std::string, std::map<std::string, sdbus::Variant>>>;
+    using ObjectMap = std::map<ObjectPath, std::map<std::string, std::map<std::string, Variant>>>;
     ObjectMap objects;
 
-    auto objMgr = sdbus::createProxy(*connection_, "org.bluez", "/");
+    const auto objMgr = createProxy(*connection_, "org.bluez", "/");
     objMgr->finishRegistration();
 
-    auto method = objMgr->createMethodCall("org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+    const auto method = objMgr->createMethodCall("org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
     auto reply = objMgr->callMethod(method);
     reply >> objects;
 
@@ -93,7 +94,7 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
             auto uuidIt = props.find("UUID");
             if (uuidIt != props.end()) {
                 auto uuid = uuidIt->second.get<std::string>();
-                std::transform(uuid.begin(), uuid.end(), uuid.begin(), ::tolower);
+                std::transform(uuid.begin(), uuid.end(), uuid.begin(), tolower);
 
                 if (uuid == TX_UUID && txCharPath_.empty())
                     txCharPath_ = path;
@@ -111,22 +112,22 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
 
     receiveCallback_ = std::move(onReceive);
 
-    rxProxy_ = sdbus::createProxy(*connection_, "org.bluez", rxCharPath_);
+    rxProxy_ = createProxy(*connection_, "org.bluez", rxCharPath_);
     rxProxy_->uponSignal("PropertiesChanged")
         .onInterface("org.freedesktop.DBus.Properties")
         .call([this](const std::string& interface,
-                     const std::map<std::string, sdbus::Variant>& changed,
+                     const std::map<std::string, Variant>& changed,
                      const std::vector<std::string>&) {
             if (interface == "org.bluez.GattCharacteristic1") {
-                auto it = changed.find("Value");
-                if (it != changed.end()) {
-                    const auto& vec = it->second.get<std::vector<uint8_t>>();
+                const auto value = changed.find("Value");
+                if (value != changed.end()) {
+                    const auto& vec = value->second.get<std::vector<uint8_t>>();
                     std::string rawMessage(vec.begin(), vec.end());
                     std::string message;
                     std::copy_if(rawMessage.begin(), rawMessage.end(), std::back_inserter(message),
-                                 [](char c) { return c != '\r' && c != '\n'; });
+                                 [](const char c) { return c != '\r' && c != '\n'; });
                     {
-                        std::lock_guard<std::mutex> lock(rxQueueMutex_);
+                        std::lock_guard lock(rxQueueMutex_);
                         rxQueue_.push(message);
                     }
                 }
@@ -136,7 +137,7 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
 
     try {
         rxProxy_->callMethod("StartNotify").onInterface("org.bluez.GattCharacteristic1");
-    } catch (const sdbus::Error& e) {
+    } catch (const Error& e) {
         std::cerr << "⚠️ Failed to start notifications: " << e.getMessage() << "\n";
         return false;
     }
@@ -168,10 +169,10 @@ void BleUartClient::disconnect() {
     connected_ = false;
 }
 
-bool BleUartClient::send(const std::string& text) {
+bool BleUartClient::send(const std::string& text) const {
     if (!connected_ || txCharPath_.empty()) return false;
 
-    auto charProxy = sdbus::createProxy(*connection_, "org.bluez", txCharPath_);
+    const auto charProxy = createProxy(*connection_, "org.bluez", txCharPath_);
     charProxy->finishRegistration();
 
     std::vector<uint8_t> data(text.begin(), text.end());
@@ -179,19 +180,20 @@ bool BleUartClient::send(const std::string& text) {
     try {
         charProxy->callMethod("WriteValue")
             .onInterface("org.bluez.GattCharacteristic1")
-            .withArguments(data, std::map<std::string, sdbus::Variant>{});
+            .withArguments(data, std::map<std::string, Variant>{});
         return true;
-    } catch (const sdbus::Error& e) {
+    } catch (const Error& e) {
         std::cerr << "❌ Send failed: " << e.getMessage() << "\n";
         return false;
     }
 }
 
+// ReSharper disable once CppParameterNeverUsed
 void BleUartClient::processIncomingMessages(std::ostream& out) {
     std::queue<std::string> pending;
 
     {
-        std::lock_guard<std::mutex> lock(rxQueueMutex_);
+        std::lock_guard lock(rxQueueMutex_);
         std::swap(pending, rxQueue_);
     }
 
@@ -199,8 +201,4 @@ void BleUartClient::processIncomingMessages(std::ostream& out) {
         if (receiveCallback_) receiveCallback_(pending.front());
         pending.pop();
     }
-}
-
-sdbus::IConnection& BleUartClient::connection() {
-    return *connection_;
 }

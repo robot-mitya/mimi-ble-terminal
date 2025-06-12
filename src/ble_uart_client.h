@@ -22,11 +22,10 @@ public:
     BleUartClient();
     ~BleUartClient();
 
-    std::vector<PairedDevice> listPairedDevices();
+    static std::vector<PairedDevice> listPairedDevices();
     bool connectTo(const std::string& alias, ReceiveCallback onReceive);
     void disconnect();
-    sdbus::IConnection& connection();
-    bool send(const std::string& text);
+    [[nodiscard]] bool send(const std::string& text) const;
     void processIncomingMessages(std::ostream& out = std::cout);
 private:
     sdbus::IConnection* connection_ = nullptr;

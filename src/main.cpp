@@ -1,25 +1,42 @@
+// ReSharper disable CppTooWideScopeInitStatement
 #include "ble_uart_client.h"
 #include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/select.h>
 #include <chrono>
+#include <filesystem>
 #include <thread>
 
-int main() {
-    std::cout.setf(std::ios::unitbuf);  // автоматический flush
-    BleUartClient client;
+std::string get_robot_name_from_args(const int argc, char* argv[]) {
+    const std::string prefix = "--robot-name=";
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg.rfind(prefix, 0) == 0) { // starts with prefix
+            return arg.substr(prefix.length());
+        }
+    }
+    return {};
+}
 
-    auto devices = client.listPairedDevices();
+int main(int argc, char* argv[]) {
+    std::cout.setf(std::ios::unitbuf);  // автоматический flush
+
+    const auto devices = BleUartClient::listPairedDevices();
     std::cout << "🔍 Paired devices:\n";
     for (const auto& d : devices) {
         std::cout << " - " << d.alias << " [" << d.address << "]\n";
     }
 
-    // std::cout << "Enter robot alias to connect: ";
-    const std::string name = "BBC micro:bit";
-    // std::getline(std::cin, name);
+    std::string name = get_robot_name_from_args(argc, argv);
+    // if (name.empty()) name = "BBC micro:bit";
+    if (name.empty()) {
+        std::string execName = std::filesystem::path(argv[0]).filename().string();
+        std::cout << "\nUsage: " << execName << " --robot-name <alias>" << std::endl;
+        return 1;
+    }
 
+    BleUartClient client;
     if (!client.connectTo(name, [](const std::string& msg) {
         std::cout << "\r🤖 " << msg << "\n> " << std::flush;
     })) {
@@ -28,7 +45,7 @@ int main() {
     }
 
     // Настроим stdin в неблокирующий режим
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    const int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
 
     std::string inputBuffer;
@@ -44,21 +61,22 @@ int main() {
         FD_ZERO(&readfds);
         FD_SET(STDIN_FILENO, &readfds);
 
-        struct timeval timeout;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 10000;  // 10 ms
+        timeval timeout = { 0, 10000 };
 
-        int ret = select(STDIN_FILENO + 1, &readfds, nullptr, nullptr, &timeout);
+        const int ret = select(STDIN_FILENO + 1, &readfds, nullptr, nullptr, &timeout);
         if (ret > 0 && FD_ISSET(STDIN_FILENO, &readfds)) {
             char ch;
-            ssize_t n = read(STDIN_FILENO, &ch, 1);
+            const ssize_t n = read(STDIN_FILENO, &ch, 1);
             if (n > 0) {
                 if (ch == '\n') {
                     if (inputBuffer == "q") {
                         break;
                     }
                     if (!inputBuffer.empty()) {
-                        client.send(inputBuffer + "\n");
+                        const bool sent = client.send(inputBuffer + "\n");
+                        if (!sent) {
+                            std::cerr << "❌ Failed to send.\n";
+                        }
                     }
                     inputBuffer.clear();
                     std::cout << "> " << std::flush;
