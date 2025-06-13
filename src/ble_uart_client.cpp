@@ -2,6 +2,7 @@
 #include "ble_uart_client.h"
 
 #include <iomanip>
+#include <thread>
 #include <utility>
 #include <sdbus-c++/sdbus-c++.h>
 
@@ -185,12 +186,22 @@ bool BleUartClient::send(const std::string& text) const {
     const auto charProxy = createProxy(*connection_, "org.bluez", txCharPath_);
     charProxy->finishRegistration();
 
-    std::vector<uint8_t> data(text.begin(), text.end());
-
     try {
-        charProxy->callMethod("WriteValue")
-            .onInterface("org.bluez.GattCharacteristic1")
-            .withArguments(data, std::map<std::string, Variant>{});
+        constexpr long maxChunkSize = 19;
+        for (long offset = 0; offset < text.size(); offset += maxChunkSize) {
+            if (offset > 0) {
+                // Make a pause between chunks:
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+
+            const long chunkLen = std::min(maxChunkSize, static_cast<long>(text.size()) - offset);
+            std::vector<uint8_t> chunk(text.begin() + offset, text.begin() + offset + chunkLen);
+
+            charProxy->callMethod("WriteValue")
+                .onInterface("org.bluez.GattCharacteristic1")
+                .withArguments(chunk, std::map<std::string, Variant>{});
+        }
+
         return true;
     } catch (const Error& e) {
         errorCallback_(str("❌ Send failed: ", e.getMessage(), "\n"));
