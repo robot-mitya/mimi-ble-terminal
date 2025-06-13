@@ -2,6 +2,7 @@
 #include "ble_uart_client.h"
 
 #include <iomanip>
+#include <iostream>
 #include <thread>
 #include <utility>
 #include <sdbus-c++/sdbus-c++.h>
@@ -136,7 +137,7 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
                     std::string rawMessage(vec.begin(), vec.end());
                     std::string message;
                     std::copy_if(rawMessage.begin(), rawMessage.end(), std::back_inserter(message),
-                                 [](const char c) { return c != '\r' && c != '\n'; });
+                    [](const char c) { return c != '\r'; });
                     {
                         std::lock_guard lock(rxQueueMutex_);
                         rxQueue_.push(message);
@@ -218,7 +219,18 @@ void BleUartClient::processIncomingMessages() {
     }
 
     while (!pending.empty()) {
-        if (receiveCallback_) receiveCallback_(pending.front());
+        const std::string& fragment = pending.front();
+        rxAssembleBuffer_ += fragment;
+
+        size_t pos;
+        while ((pos = rxAssembleBuffer_.find('\n')) != std::string::npos) {
+            std::string messageText = rxAssembleBuffer_.substr(0, pos);
+            if (receiveCallback_)
+                receiveCallback_(messageText);
+
+            rxAssembleBuffer_.erase(0, pos + 1); // delete message substr including '\n'
+        }
+
         pending.pop();
     }
 }

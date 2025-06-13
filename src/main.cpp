@@ -19,7 +19,7 @@ std::string get_robot_name_from_args(const int argc, char* argv[]) {
     return {};
 }
 
-int main(int argc, char* argv[]) {
+int main(const int argc, char* argv[]) {
     std::cout.setf(std::ios::unitbuf);  // автоматический flush
 
     const auto devices = BleUartClient::listPairedDevices();
@@ -28,10 +28,10 @@ int main(int argc, char* argv[]) {
         std::cout << " - " << d.alias << " [" << d.address << "]\n";
     }
 
-    std::string name = get_robot_name_from_args(argc, argv);
+    const std::string name = get_robot_name_from_args(argc, argv);
     // if (name.empty()) name = "BBC micro:bit";
     if (name.empty()) {
-        std::string execName = std::filesystem::path(argv[0]).filename().string();
+        const std::string execName = std::filesystem::path(argv[0]).filename().string();
         std::cout << "\nUsage: " << execName << " --robot-name=\"<alias>\"" << std::endl;
         return 1;
     }

@@ -37,6 +37,7 @@ private:
     bool connected_ = false;
 
     std::mutex rxQueueMutex_;
+    std::string rxAssembleBuffer_;
     std::queue<std::string> rxQueue_;
     std::function<void(const std::string&)> infoCallback_;
     std::function<void(const std::string&)> errorCallback_;
