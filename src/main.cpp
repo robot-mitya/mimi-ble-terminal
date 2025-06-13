@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
     // if (name.empty()) name = "BBC micro:bit";
     if (name.empty()) {
         std::string execName = std::filesystem::path(argv[0]).filename().string();
-        std::cout << "\nUsage: " << execName << " --robot-name <alias>" << std::endl;
+        std::cout << "\nUsage: " << execName << " --robot-name=\"<alias>\"" << std::endl;
         return 1;
     }
 

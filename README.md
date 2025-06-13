@@ -12,13 +12,6 @@ Command documentation is available [here](https://github.com/robot-mitya/microbi
 
 ## Installation
 
-Clone the project:
-
-```commandline
-git clone git@github.com:robot-mitya/mimi-ble-terminal.git
-cd mimi-ble-terminal
-```
-
 Install the project dependencies:
 
 ```commandline
@@ -31,6 +24,22 @@ sudo apt install \
   libsdbus-c++1 \
   libbluetooth-dev \
   bluez
+```
+
+Clone the project:
+
+```commandline
+git clone git@github.com:robot-mitya/mimi-ble-terminal.git
+cd mimi-ble-terminal
+```
+
+Building the project:
+
+```commandline
+mkdir build
+cd build
+cmake ..
+make
 ```
 
 ## Running
