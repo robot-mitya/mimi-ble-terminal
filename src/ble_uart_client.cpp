@@ -197,7 +197,7 @@ void BleUartClient::disconnect() {
     }
 
     isConnected_ = false;
-    disconnectCallback_("Disconnected");
+    disconnectCallback_("Disconnected", false);
 }
 
 bool BleUartClient::send(const std::string& text) const {

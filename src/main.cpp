@@ -46,8 +46,8 @@ int main(const int argc, char* argv[]) {
         [](const std::string& connectedText) {
             std::cout << "✅ " << connectedText << std::endl;
         },
-        [](const std::string& disconnectedText) {
-            std::cout << "❎ " << disconnectedText << std::endl;
+        [](const std::string& disconnectedText, bool isFailure) {
+            std::cout << (isFailure ? "❌ " : "❎ ") << disconnectedText << std::endl;
         },
         [](const std::string& errorText) {
             std::cout << "❌ " << errorText << std::endl;

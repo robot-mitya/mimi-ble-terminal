@@ -17,7 +17,7 @@ struct PairedDevice {
 class BleUartClient {
 public:
     using ConnectCallback = std::function<void(const std::string&)>;
-    using DisconnectCallback = std::function<void(const std::string&)>;
+    using DisconnectCallback = std::function<void(const std::string&, bool isFailure)>;
     using ErrorCallback = std::function<void(const std::string&)>;
     using ReceiveCallback = std::function<void(const std::string&)>;
 
