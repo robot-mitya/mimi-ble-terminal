@@ -32,8 +32,13 @@ public:
     bool connect(const std::string& alias, bool keepConnection);
     void disconnect();
     [[nodiscard]] bool isConnected() const { return isConnected_; }
-    [[nodiscard]] bool send(const std::string& text) const;
-    void processIncomingMessages();
+    [[nodiscard]] bool send(const std::string& text);
+    void processCallbacks();
+
+    void postConnect(const std::string& message);
+    void postDisconnect(const std::string& message, bool isFailure);
+    void postReceive(const std::string& message);
+    void postError(const std::string& message);
 private:
     ConnectCallback connectCallback_;
     DisconnectCallback disconnectCallback_;
@@ -49,10 +54,10 @@ private:
     std::unique_ptr<sdbus::IProxy> rxProxy_;
     std::string txCharPath_;
     std::string rxCharPath_;
-
-    std::mutex rxQueueMutex_;
     std::string rxAssembleBuffer_;
-    std::queue<std::string> rxQueue_;
+
+    std::queue<std::function<void()>> callbackQueue_;
+    std::mutex callbackQueueMutex_;
 
     bool doConnect();
 };

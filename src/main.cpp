@@ -46,7 +46,7 @@ int main(const int argc, char* argv[]) {
         [](const std::string& connectedText) {
             std::cout << "✅ " << connectedText << std::endl;
         },
-        [](const std::string& disconnectedText, bool isFailure) {
+        [](const std::string& disconnectedText, const bool isFailure) {
             std::cout << (isFailure ? "❌ " : "❎ ") << disconnectedText << std::endl;
         },
         [](const std::string& errorText) {
@@ -60,7 +60,9 @@ int main(const int argc, char* argv[]) {
     );
 
     std::cout << "\n🛜 Connecting to " << name << "..." << std::endl;
-    if (!client.connect(name, false)) {
+    const bool isConnected = client.connect(name, false);
+    client.processCallbacks();
+    if (!isConnected) {
         return EXIT_FAILURE;
     }
 
@@ -74,7 +76,7 @@ int main(const int argc, char* argv[]) {
     fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
     while (true) {
         // Обработка входящих BLE-сообщений
-        client.processIncomingMessages();
+        client.processCallbacks();
 
         // Проверка наличия ввода
         fd_set readfds;
