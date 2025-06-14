@@ -17,8 +17,15 @@ std::string str(Args&&... args)
     return oss.str();
 }
 
-BleUartClient::BleUartClient(InfoCallback infoCallback, ErrorCallback errorCallback) :
-    infoCallback_(std::move(infoCallback)), errorCallback_(std::move(errorCallback)) {}
+BleUartClient::BleUartClient(
+        ConnectCallback connectCallback,
+        DisconnectCallback disconnectCallback,
+        ErrorCallback errorCallback,
+        ReceiveCallback receiveCallback) :
+    connectCallback_(std::move(connectCallback)),
+    disconnectCallback_(std::move(disconnectCallback)),
+    errorCallback_(std::move(errorCallback)),
+    receiveCallback_(std::move(receiveCallback)) {}
 
 BleUartClient::~BleUartClient() {
     disconnect();
@@ -61,14 +68,31 @@ std::vector<PairedDevice> BleUartClient::listPairedDevices() {
     return devices;
 }
 
-bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceive) {
+bool BleUartClient::connect(const std::string& alias, const bool keepConnection) {
+    if (isConnected_) return true;
+    deviceAlias_ = alias;
+    keepConnection_ = keepConnection;
+    const bool result = doConnect();
+    if (keepConnection_) {
+        isConnected_ = true;
+        //TODO Start calling doConnect() iterations after delay...
+    } else {
+        if (result) {
+            isConnected_ = true;
+            connectCallback_(str("Connected to ", deviceAlias_));
+        }
+    }
+    return result;
+}
+
+bool BleUartClient::doConnect() {
     auto devices = listPairedDevices();
     const auto it = std::find_if(devices.begin(), devices.end(), [&](const PairedDevice& d) {
-        return d.alias == alias;
+        return d.alias == deviceAlias_;
     });
 
     if (it == devices.end()) {
-        errorCallback_(str("❌ Device with alias '", alias, "' not found\n"));
+        errorCallback_(str("Device with alias '", deviceAlias_, "' not found")); //❌
         return false;
     }
 
@@ -78,10 +102,9 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     deviceProxy_->finishRegistration();
 
     try {
-        infoCallback_(str("📡 Connecting to ", alias, "...\n"));
         deviceProxy_->callMethod("Connect").onInterface("org.bluez.Device1");
     } catch (const Error& e) {
-        errorCallback_(str("❌ Failed to connect: ", e.getName(), " - ", e.getMessage(), "\n"));
+        errorCallback_(str("Failed to connect: ", e.getMessage(), " [", e.getName(), "]")); //❌
         return false;
     }
 
@@ -118,11 +141,9 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     }
 
     if (txCharPath_.empty() || rxCharPath_.empty()) {
-        errorCallback_(str("❌ TX or RX characteristic not found\n"));
+        errorCallback_(str("TX or RX characteristic not found")); //❌
         return false;
     }
-
-    receiveCallback_ = std::move(onReceive);
 
     rxProxy_ = createProxy(*connection_, "org.bluez", rxCharPath_);
     rxProxy_->uponSignal("PropertiesChanged")
@@ -150,19 +171,16 @@ bool BleUartClient::connectTo(const std::string& alias, ReceiveCallback onReceiv
     try {
         rxProxy_->callMethod("StartNotify").onInterface("org.bluez.GattCharacteristic1");
     } catch (const Error& e) {
-        errorCallback_(str("⚠️ Failed to start notifications: ", e.getMessage(), "\n"));
+        errorCallback_(str("Failed to start notifications: ", e.getMessage(), " [", e.getName(), "]")); //❌
         return false;
     }
 
     connection_->enterEventLoopAsync();
-
-    connected_ = true;
-    infoCallback_(str("✅ Connected to ", alias, "\n"));
     return true;
 }
 
 void BleUartClient::disconnect() {
-    if (!connected_) return;
+    if (!isConnected_) return;
 
     if (rxProxy_) {
         try {
@@ -178,11 +196,15 @@ void BleUartClient::disconnect() {
         deviceProxy_.reset();
     }
 
-    connected_ = false;
+    isConnected_ = false;
+    disconnectCallback_("Disconnected");
 }
 
 bool BleUartClient::send(const std::string& text) const {
-    if (!connected_ || txCharPath_.empty()) return false;
+    if (!isConnected_ || txCharPath_.empty()) {
+        errorCallback_("Not connected"); //❌
+        return false;
+    }
 
     const auto charProxy = createProxy(*connection_, "org.bluez", txCharPath_);
     charProxy->finishRegistration();
@@ -205,7 +227,7 @@ bool BleUartClient::send(const std::string& text) const {
 
         return true;
     } catch (const Error& e) {
-        errorCallback_(str("❌ Send failed: ", e.getMessage(), "\n"));
+        errorCallback_(str("Send failed: ", e.getMessage(), " [", e.getName(), "]")); //❌
         return false;
     }
 }

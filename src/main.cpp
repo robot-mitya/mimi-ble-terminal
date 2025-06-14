@@ -19,13 +19,19 @@ std::string get_robot_name_from_args(const int argc, char* argv[]) {
     return {};
 }
 
+bool prompt_has_been_shown = false;
+
+void output_command_prompt() {
+    if (prompt_has_been_shown) std::cout << "> " << std::flush;
+}
+
 int main(const int argc, char* argv[]) {
     std::cout.setf(std::ios::unitbuf);  // автоматический flush
 
     const auto devices = BleUartClient::listPairedDevices();
-    std::cout << "🔍 Paired devices:\n";
+    std::cout << "📌 Paired devices (output format \"<name> [MAC-address]\"):\n";
     for (const auto& d : devices) {
-        std::cout << " - " << d.alias << " [" << d.address << "]\n";
+        std::cout << " • " << d.alias << " [" << d.address << "]\n";
     }
 
     const std::string name = get_robot_name_from_args(argc, argv);
@@ -33,32 +39,39 @@ int main(const int argc, char* argv[]) {
     if (name.empty()) {
         const std::string execName = std::filesystem::path(argv[0]).filename().string();
         std::cout << "\nUsage: " << execName << " --robot-name=\"<alias>\"" << std::endl;
-        return 1;
+        return EXIT_FAILURE;
     }
 
     BleUartClient client(
-        [](const std::string& infoText) {
-            std::cout << infoText;
+        [](const std::string& connectedText) {
+            std::cout << "✅ " << connectedText << std::endl;
+        },
+        [](const std::string& disconnectedText) {
+            std::cout << "❎ " << disconnectedText << std::endl;
         },
         [](const std::string& errorText) {
-            std::cerr << errorText;
+            std::cout << "❌ " << errorText << std::endl;
+            output_command_prompt();
+        },
+        [](const std::string& receivedMessage) {
+            std::cout << "\r🤖 " << receivedMessage << std::endl;
+            output_command_prompt();
         }
     );
-    if (!client.connectTo(name, [](const std::string& msg) {
-        std::cout << "\r🤖 " << msg << "\n> " << std::flush;
-    })) {
-        std::cerr << "❌ Failed to connect.\n";
-        return 1;
+
+    std::cout << "\n🛜 Connecting to " << name << "..." << std::endl;
+    if (!client.connect(name, false)) {
+        return EXIT_FAILURE;
     }
 
+    prompt_has_been_shown = true;
+    std::cout << "\n💬 Type commands to send to robot. Type 'q' to quit." << std::endl;
+    output_command_prompt();
+
+    std::string inputBuffer;
     // Настроим stdin в неблокирующий режим
     const int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-
-    std::string inputBuffer;
-    std::cout << "💬 Type commands to send to robot. Type 'q' to quit.\n";
-    std::cout << "> " << std::flush;
-
     while (true) {
         // Обработка входящих BLE-сообщений
         client.processIncomingMessages();
@@ -80,13 +93,11 @@ int main(const int argc, char* argv[]) {
                         break;
                     }
                     if (!inputBuffer.empty()) {
-                        const bool sent = client.send(inputBuffer + "\n");
-                        if (!sent) {
-                            std::cerr << "❌ Failed to send.\n";
+                        if (client.send(inputBuffer + "\n")) {
+                            output_command_prompt();
                         }
                     }
                     inputBuffer.clear();
-                    std::cout << "> " << std::flush;
                 } else {
                     inputBuffer += ch;
                 }
@@ -97,6 +108,6 @@ int main(const int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    std::cout << "\n🔌 Done.\n";
-    return 0;
+    std::cout << "\n";
+    return EXIT_SUCCESS;
 }

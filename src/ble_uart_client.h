@@ -16,32 +16,45 @@ struct PairedDevice {
 
 class BleUartClient {
 public:
-    using InfoCallback = std::function<void(const std::string&)>;
+    using ConnectCallback = std::function<void(const std::string&)>;
+    using DisconnectCallback = std::function<void(const std::string&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
     using ReceiveCallback = std::function<void(const std::string&)>;
 
-    BleUartClient(InfoCallback infoCallback, ErrorCallback errorCallback);
+    BleUartClient(
+        ConnectCallback connectCallback,
+        DisconnectCallback disconnectCallback,
+        ErrorCallback errorCallback,
+        ReceiveCallback receiveCallback);
     ~BleUartClient();
 
     static std::vector<PairedDevice> listPairedDevices();
-    bool connectTo(const std::string& alias, ReceiveCallback onReceive);
+    bool connect(const std::string& alias, bool keepConnection);
     void disconnect();
+    [[nodiscard]] bool isConnected() const { return isConnected_; }
     [[nodiscard]] bool send(const std::string& text) const;
     void processIncomingMessages();
 private:
+    ConnectCallback connectCallback_;
+    DisconnectCallback disconnectCallback_;
+    ErrorCallback errorCallback_;
+    ReceiveCallback receiveCallback_;
+
+    std::string deviceAlias_;
+    bool keepConnection_ = false;
+    bool isConnected_ = false;
+
     sdbus::IConnection* connection_ = nullptr;
     std::unique_ptr<sdbus::IProxy> deviceProxy_;
     std::unique_ptr<sdbus::IProxy> rxProxy_;
     std::string txCharPath_;
     std::string rxCharPath_;
-    bool connected_ = false;
 
     std::mutex rxQueueMutex_;
     std::string rxAssembleBuffer_;
     std::queue<std::string> rxQueue_;
-    std::function<void(const std::string&)> infoCallback_;
-    std::function<void(const std::string&)> errorCallback_;
-    std::function<void(const std::string&)> receiveCallback_;
+
+    bool doConnect();
 };
 
 #endif //BLE_UART_CLIENT_H
