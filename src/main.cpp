@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <thread>
 
+using namespace mimi;
+
 std::string get_robot_name_from_args(const int argc, char* argv[]) {
     const std::string prefix = "--robot-name=";
     for (int i = 1; i < argc; ++i) {
@@ -46,7 +48,7 @@ int main(const int argc, char* argv[]) {
         [](const std::string& deviceAlias, const std::string& connectedText, const bool afterFailure) {
             const std::string prefix = str("[", deviceAlias, "]: ");
             std::cout << "\r✅ " << prefix << connectedText << std::endl;
-            if (afterFailure) {
+            if (afterFailure || prompt_has_been_shown) {
                 output_command_prompt();
             }
         },

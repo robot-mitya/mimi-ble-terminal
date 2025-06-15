@@ -9,6 +9,8 @@
 #include <sdbus-c++/IConnection.h>
 #include <sdbus-c++/IProxy.h>
 
+namespace mimi {
+
 template<typename... Args>
 std::string str(Args&&... args)
 {
@@ -74,5 +76,7 @@ private:
 
     bool doConnect();
 };
+
+} // namespace mimi
 
 #endif //BLE_UART_CLIENT_H

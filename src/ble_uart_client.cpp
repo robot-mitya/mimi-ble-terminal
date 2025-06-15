@@ -6,6 +6,7 @@
 #include <sdbus-c++/sdbus-c++.h>
 
 using namespace sdbus;
+using namespace mimi;
 
 BleUartClient::BleUartClient(
         ConnectCallback connectCallback,
