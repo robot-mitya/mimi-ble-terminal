@@ -75,6 +75,11 @@ private:
     void postError(const std::string& message, const std::string& sdbusErrorName, bool isConnected);
 
     bool doConnect();
+    bool findDevice(std::vector<PairedDevice> pairedDevices, PairedDevice& pairedDevice);
+    bool connectGatt(const PairedDevice &pairedDevice);
+    bool discoverCharacteristics();
+    bool setupReceiveNotifications();
+    void setupConnectionMonitor();
 };
 
 } // namespace mimi

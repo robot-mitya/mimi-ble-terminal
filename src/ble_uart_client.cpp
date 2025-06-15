@@ -77,45 +77,33 @@ bool BleUartClient::connect(const std::string& alias, const bool keepConnection)
     return successfullyConnected;
 }
 
-bool BleUartClient::doConnect() {
-    auto devices = listPairedDevices();
-    const auto device = std::find_if(devices.begin(), devices.end(), [&](const PairedDevice& d) {
+bool BleUartClient::findDevice(std::vector<PairedDevice> pairedDevices, PairedDevice& pairedDevice) {
+    const auto device = std::find_if(pairedDevices.begin(), pairedDevices.end(), [&](const PairedDevice& d) {
         return d.alias == deviceAlias_;
     });
-
-    if (device == devices.end()) {
+    if (device == pairedDevices.end()) {
         postError(str("Device with alias '", deviceAlias_, "' not found"), "", isConnected_); //❌
         return false;
     }
+    pairedDevice = *device;
+    return true;
+}
 
+bool BleUartClient::connectGatt(const PairedDevice &pairedDevice) {
     connection_ = createSystemBusConnection().release();
-    deviceProxy_ = createProxy(*connection_, "org.bluez", device->path);
-    deviceProxy_->uponSignal("PropertiesChanged")
-    .onInterface("org.freedesktop.DBus.Properties")
-    .call([this](const std::string& interface,
-                 const std::map<std::string, Variant>& changed,
-                 const std::vector<std::string>&) {
-        if (interface == "org.bluez.Device1") {
-            const auto it = changed.find("Connected");
-            if (it != changed.end() && !it->second.get<bool>()) {
-                // Соединение незапланированно потеряно
-                postDisconnect(str("Disconnected from \'", deviceAlias_, "\'"), true);
-                if (keepConnection_) {
-                    startReconnectLoop();
-                }
-            }
-        }
-    });
+    deviceProxy_ = createProxy(*connection_, "org.bluez", pairedDevice.path);
     deviceProxy_->finishRegistration();
-
     try {
         deviceProxy_->callMethod("Connect").onInterface("org.bluez.Device1");
     } catch (const Error& e) {
         postError(str("Failed to connect: ", e.getMessage()), e.getName(), isConnected_); //❌
         return false;
     }
+    connection_->enterEventLoopAsync();
+    return true;
+}
 
-    // Ищем TX и RX characteristics
+bool BleUartClient::discoverCharacteristics() {
     using ObjectMap = std::map<ObjectPath, std::map<std::string, std::map<std::string, Variant>>>;
     ObjectMap objects;
 
@@ -152,6 +140,10 @@ bool BleUartClient::doConnect() {
         return false;
     }
 
+    return true;
+}
+
+bool BleUartClient::setupReceiveNotifications() {
     rxProxy_ = createProxy(*connection_, "org.bluez", rxCharPath_);
     rxProxy_->uponSignal("PropertiesChanged")
         .onInterface("org.freedesktop.DBus.Properties")
@@ -188,7 +180,42 @@ bool BleUartClient::doConnect() {
         return false;
     }
 
-    connection_->enterEventLoopAsync();
+    return true;
+}
+
+void BleUartClient::setupConnectionMonitor() {
+    deviceProxy_->uponSignal("PropertiesChanged")
+    .onInterface("org.freedesktop.DBus.Properties")
+    .call([this](const std::string& interface,
+                 const std::map<std::string, Variant>& changed,
+                 const std::vector<std::string>&) {
+        if (interface == "org.bluez.Device1") {
+            const auto it = changed.find("Connected");
+            if (it != changed.end() && !it->second.get<bool>()) {
+                // Соединение незапланированно потеряно
+                postDisconnect(str("Disconnected from \'", deviceAlias_, "\'"), true);
+                if (keepConnection_) {
+                    startReconnectLoop();
+                }
+            }
+        }
+    });
+    deviceProxy_->finishRegistration();
+}
+
+bool BleUartClient::doConnect() {
+    const std::vector<PairedDevice> devices = listPairedDevices();
+
+    PairedDevice device;
+    if (!findDevice(devices, device)) return false;
+
+    if (!connectGatt(device)) return false;
+
+    if (!discoverCharacteristics()) return false;
+
+    setupReceiveNotifications();
+    setupConnectionMonitor();
+
     return true;
 }
 
@@ -229,8 +256,10 @@ bool BleUartClient::disconnect() {
     }
 
     isConnected_ = false;
-    postDisconnect("Disconnected", false);
-    processCallbacks();
+    if (!reconnecting_) {
+        postDisconnect(str("Disconnected from \'", deviceAlias_, "\'"), false);
+        processCallbacks();
+    }
     return true;
 }
 
