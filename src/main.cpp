@@ -43,20 +43,25 @@ int main(const int argc, char* argv[]) {
     }
 
     BleUartClient client(
-        [](const std::string& connectedText) {
-            std::cout << "✅ " << connectedText << std::endl;
+        [](const std::string& connectedText, const bool afterFailure) {
+            std::cout << "\r✅ " << connectedText << std::endl;
+            if (afterFailure) {
+                output_command_prompt();
+            }
         },
         [](const std::string& disconnectedText, const bool isFailure) {
             if (isFailure) {
                 std::cout << "\r❌ " << disconnectedText << std::endl;
                 output_command_prompt();
             } else {
-                std::cout << "❎ " << disconnectedText << std::endl;
+                std::cout << "\r❎ " << disconnectedText << std::endl;
             }
         },
-        [](const std::string& errorText) {
-            std::cout << "❌ " << errorText << std::endl;
-            output_command_prompt();
+        [](const std::string& errorText, const bool isConnected) {
+            std::cout << "\r❌ " << errorText << std::endl;
+            if (isConnected) {
+                output_command_prompt();
+            }
         },
         [](const std::string& receivedMessage) {
             std::cout << "\r🤖 " << receivedMessage << std::endl;
@@ -64,9 +69,8 @@ int main(const int argc, char* argv[]) {
         }
     );
 
-    std::cout << "\n🛜 Connecting to " << name << "..." << std::endl;
+    std::cout << "\n🛜 Connecting to \'" << name << "\'..." << std::endl;
     const bool isConnected = client.connect(name, true);
-    client.processCallbacks();
     if (!isConnected) {
         return EXIT_FAILURE;
     }
@@ -115,6 +119,7 @@ int main(const int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
+    client.disconnect();
     std::cout << "\n";
     return EXIT_SUCCESS;
 }

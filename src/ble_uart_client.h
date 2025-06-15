@@ -16,9 +16,9 @@ struct PairedDevice {
 
 class BleUartClient {
 public:
-    using ConnectCallback = std::function<void(const std::string&)>;
+    using ConnectCallback = std::function<void(const std::string&, bool afterFailure)>;
     using DisconnectCallback = std::function<void(const std::string&, bool isFailure)>;
-    using ErrorCallback = std::function<void(const std::string&)>;
+    using ErrorCallback = std::function<void(const std::string&, bool isConnected)>;
     using ReceiveCallback = std::function<void(const std::string&)>;
 
     BleUartClient(
@@ -30,15 +30,10 @@ public:
 
     static std::vector<PairedDevice> listPairedDevices();
     bool connect(const std::string& alias, bool keepConnection);
-    void disconnect();
+    bool disconnect();
     [[nodiscard]] bool isConnected() const { return isConnected_; }
     [[nodiscard]] bool send(const std::string& text);
     void processCallbacks();
-
-    void postConnect(const std::string& message);
-    void postDisconnect(const std::string& message, bool isFailure);
-    void postReceive(const std::string& message);
-    void postError(const std::string& message);
 private:
     ConnectCallback connectCallback_;
     DisconnectCallback disconnectCallback_;
@@ -63,6 +58,10 @@ private:
 
     std::queue<std::function<void()>> callbackQueue_;
     std::mutex callbackQueueMutex_;
+    void postConnect(const std::string& message, bool afterFailure);
+    void postDisconnect(const std::string& message, bool isFailure);
+    void postReceive(const std::string& message);
+    void postError(const std::string& message, bool isConnected);
 
     bool doConnect();
 };

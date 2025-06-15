@@ -75,10 +75,12 @@ bool BleUartClient::connect(const std::string& alias, const bool keepConnection)
     const bool successfullyConnected = doConnect();
     if (!successfullyConnected && keepConnection_) {
         isConnected_ = true;
+        processCallbacks();
+        startReconnectLoop();
         return true;
     }
     if (successfullyConnected) {
-        postConnect(str("Connected to \'", deviceAlias_, "\'"));
+        postConnect(str("Connected to \'", deviceAlias_, "\'"), false);
     }
     isConnected_ = successfullyConnected;
     return successfullyConnected;
@@ -91,7 +93,7 @@ bool BleUartClient::doConnect() {
     });
 
     if (device == devices.end()) {
-        postError(str("Device with alias '", deviceAlias_, "' not found")); //❌
+        postError(str("Device with alias '", deviceAlias_, "' not found"), isConnected_); //❌
         return false;
     }
 
@@ -118,7 +120,7 @@ bool BleUartClient::doConnect() {
     try {
         deviceProxy_->callMethod("Connect").onInterface("org.bluez.Device1");
     } catch (const Error& e) {
-        postError(str("Failed to connect: ", e.getMessage(), " [", e.getName(), "]")); //❌
+        postError(str("Failed to connect: ", e.getMessage(), " [", e.getName(), "]"), isConnected_); //❌
         return false;
     }
 
@@ -155,7 +157,7 @@ bool BleUartClient::doConnect() {
     }
 
     if (txCharPath_.empty() || rxCharPath_.empty()) {
-        postError(str("TX or RX characteristic not found")); //❌
+        postError(str("TX or RX characteristic not found"), isConnected_); //❌
         return false;
     }
 
@@ -191,7 +193,7 @@ bool BleUartClient::doConnect() {
     try {
         rxProxy_->callMethod("StartNotify").onInterface("org.bluez.GattCharacteristic1");
     } catch (const Error& e) {
-        postError(str("Failed to start notifications: ", e.getMessage(), " [", e.getName(), "]")); //❌
+        postError(str("Failed to start notifications: ", e.getMessage(), " [", e.getName(), "]"), isConnected_); //❌
         return false;
     }
 
@@ -208,7 +210,7 @@ void BleUartClient::startReconnectLoop() {
             std::this_thread::sleep_for(std::chrono::seconds(ReconnectIntervalInSeconds));
 
             if (isConnected_ && doConnect()) {
-                postConnect(str("Reconnected to \'", deviceAlias_, "\'"));
+                postConnect(str("Reconnected to \'", deviceAlias_, "\'"), true);
                 reconnecting_ = false;
                 return;
             }
@@ -218,8 +220,8 @@ void BleUartClient::startReconnectLoop() {
     reconnectThread_.detach();
 }
 
-void BleUartClient::disconnect() {
-    if (!isConnected_) return;
+bool BleUartClient::disconnect() {
+    if (!isConnected_) return false;
 
     if (rxProxy_) {
         try {
@@ -237,11 +239,13 @@ void BleUartClient::disconnect() {
 
     isConnected_ = false;
     postDisconnect("Disconnected", false);
+    processCallbacks();
+    return true;
 }
 
 bool BleUartClient::send(const std::string& text) {
     if (!isConnected_ || txCharPath_.empty()) {
-        postError("Not connected"); //❌
+        postError("Not connected", isConnected_); //❌
         return false;
     }
 
@@ -266,7 +270,7 @@ bool BleUartClient::send(const std::string& text) {
 
         return true;
     } catch (const Error& e) {
-        postError(str("Send failed: ", e.getMessage(), " [", e.getName(), "]")); //❌
+        postError(str("Send failed: ", e.getMessage(), " [", e.getName(), "]"), isConnected_); //❌
         return false;
     }
 }
@@ -283,9 +287,9 @@ void BleUartClient::processCallbacks() {
     }
 }
 
-void BleUartClient::postConnect(const std::string& message) {
+void BleUartClient::postConnect(const std::string& message, const bool afterFailure) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { connectCallback_(message); });
+    callbackQueue_.emplace([=] { connectCallback_(message, afterFailure); });
 }
 
 void BleUartClient::postDisconnect(const std::string& message, const bool isFailure) {
@@ -298,7 +302,7 @@ void BleUartClient::postReceive(const std::string& message) {
     callbackQueue_.emplace([=] { receiveCallback_(message); });
 }
 
-void BleUartClient::postError(const std::string& message) {
+void BleUartClient::postError(const std::string& message, const bool isConnected) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { errorCallback_(message); });
+    callbackQueue_.emplace([=] { errorCallback_(message, isConnected); });
 }
