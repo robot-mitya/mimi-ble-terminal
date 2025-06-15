@@ -72,17 +72,16 @@ bool BleUartClient::connect(const std::string& alias, const bool keepConnection)
     if (isConnected_) return true;
     deviceAlias_ = alias;
     keepConnection_ = keepConnection;
-    const bool result = doConnect();
-    if (keepConnection_) {
+    const bool successfullyConnected = doConnect();
+    if (!successfullyConnected && keepConnection_) {
         isConnected_ = true;
-        //TODO Start calling doConnect() iterations after delay...
-    } else {
-        if (result) {
-            isConnected_ = true;
-            postConnect(str("Connected to ", deviceAlias_));
-        }
+        return true;
     }
-    return result;
+    if (successfullyConnected) {
+        postConnect(str("Connected to \'", deviceAlias_, "\'"));
+    }
+    isConnected_ = successfullyConnected;
+    return successfullyConnected;
 }
 
 bool BleUartClient::doConnect() {
@@ -106,8 +105,11 @@ bool BleUartClient::doConnect() {
         if (interface == "org.bluez.Device1") {
             const auto it = changed.find("Connected");
             if (it != changed.end() && !it->second.get<bool>()) {
-                // Соединение потеряно
-                postDisconnect(str("Disconnected from ", deviceAlias_), true);
+                // Соединение незапланированно потеряно
+                postDisconnect(str("Disconnected from \'", deviceAlias_, "\'"), true);
+                if (keepConnection_) {
+                    startReconnectLoop();
+                }
             }
         }
     });
@@ -195,6 +197,25 @@ bool BleUartClient::doConnect() {
 
     connection_->enterEventLoopAsync();
     return true;
+}
+
+void BleUartClient::startReconnectLoop() {
+    if (reconnecting_) return;
+    reconnecting_ = true;
+
+    reconnectThread_ = std::thread([this] {
+        while (keepConnection_) {
+            std::this_thread::sleep_for(std::chrono::seconds(ReconnectIntervalInSeconds));
+
+            if (isConnected_ && doConnect()) {
+                postConnect(str("Reconnected to \'", deviceAlias_, "\'"));
+                reconnecting_ = false;
+                return;
+            }
+        }
+    });
+
+    reconnectThread_.detach();
 }
 
 void BleUartClient::disconnect() {

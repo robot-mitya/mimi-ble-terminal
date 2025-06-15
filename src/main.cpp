@@ -65,7 +65,7 @@ int main(const int argc, char* argv[]) {
     );
 
     std::cout << "\n🛜 Connecting to " << name << "..." << std::endl;
-    const bool isConnected = client.connect(name, false);
+    const bool isConnected = client.connect(name, true);
     client.processCallbacks();
     if (!isConnected) {
         return EXIT_FAILURE;

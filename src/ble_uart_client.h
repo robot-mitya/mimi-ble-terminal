@@ -49,6 +49,11 @@ private:
     bool keepConnection_ = false;
     bool isConnected_ = false;
 
+    std::atomic<bool> reconnecting_ = false;
+    std::thread reconnectThread_;
+    void startReconnectLoop();
+    static constexpr int ReconnectIntervalInSeconds = 30;
+
     sdbus::IConnection* connection_ = nullptr;
     std::unique_ptr<sdbus::IProxy> deviceProxy_;
     std::unique_ptr<sdbus::IProxy> rxProxy_;
