@@ -47,7 +47,12 @@ int main(const int argc, char* argv[]) {
             std::cout << "✅ " << connectedText << std::endl;
         },
         [](const std::string& disconnectedText, const bool isFailure) {
-            std::cout << (isFailure ? "❌ " : "❎ ") << disconnectedText << std::endl;
+            if (isFailure) {
+                std::cout << "\r❌ " << disconnectedText << std::endl;
+                output_command_prompt();
+            } else {
+                std::cout << "❎ " << disconnectedText << std::endl;
+            }
         },
         [](const std::string& errorText) {
             std::cout << "❌ " << errorText << std::endl;

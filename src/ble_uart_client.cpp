@@ -87,18 +87,30 @@ bool BleUartClient::connect(const std::string& alias, const bool keepConnection)
 
 bool BleUartClient::doConnect() {
     auto devices = listPairedDevices();
-    const auto it = std::find_if(devices.begin(), devices.end(), [&](const PairedDevice& d) {
+    const auto device = std::find_if(devices.begin(), devices.end(), [&](const PairedDevice& d) {
         return d.alias == deviceAlias_;
     });
 
-    if (it == devices.end()) {
+    if (device == devices.end()) {
         postError(str("Device with alias '", deviceAlias_, "' not found")); //❌
         return false;
     }
 
-    const std::string& devPath = it->path;
     connection_ = createSystemBusConnection().release();
-    deviceProxy_ = createProxy(*connection_, "org.bluez", devPath);
+    deviceProxy_ = createProxy(*connection_, "org.bluez", device->path);
+    deviceProxy_->uponSignal("PropertiesChanged")
+    .onInterface("org.freedesktop.DBus.Properties")
+    .call([this](const std::string& interface,
+                 const std::map<std::string, Variant>& changed,
+                 const std::vector<std::string>&) {
+        if (interface == "org.bluez.Device1") {
+            const auto it = changed.find("Connected");
+            if (it != changed.end() && !it->second.get<bool>()) {
+                // Соединение потеряно
+                postDisconnect(str("Disconnected from ", deviceAlias_), true);
+            }
+        }
+    });
     deviceProxy_->finishRegistration();
 
     try {
