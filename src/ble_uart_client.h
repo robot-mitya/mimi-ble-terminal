@@ -27,7 +27,7 @@ class BleUartClient {
 public:
     using ConnectCallback = std::function<void(const std::string&, const std::string&, bool afterFailure)>;
     using DisconnectCallback = std::function<void(const std::string&, const std::string&, bool isFailure)>;
-    using ErrorCallback = std::function<void(const std::string&, const std::string&, bool isConnected)>;
+    using ErrorCallback = std::function<void(const std::string&, const std::string&, const std::string&, bool isConnected)>;
     using ReceiveCallback = std::function<void(const std::string&, const std::string&)>;
 
     BleUartClient(
@@ -70,7 +70,7 @@ private:
     void postConnect(const std::string& message, bool afterFailure);
     void postDisconnect(const std::string& message, bool isFailure);
     void postReceive(const std::string& message);
-    void postError(const std::string& message, bool isConnected);
+    void postError(const std::string& message, const std::string& sdbusErrorName, bool isConnected);
 
     bool doConnect();
 };

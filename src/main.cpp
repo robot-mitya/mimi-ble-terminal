@@ -44,14 +44,14 @@ int main(const int argc, char* argv[]) {
 
     BleUartClient client(
         [](const std::string& deviceAlias, const std::string& connectedText, const bool afterFailure) {
-            std::string prefix = str("[", deviceAlias, "]: ");
+            const std::string prefix = str("[", deviceAlias, "]: ");
             std::cout << "\r✅ " << prefix << connectedText << std::endl;
             if (afterFailure) {
                 output_command_prompt();
             }
         },
         [](const std::string& deviceAlias, const std::string& disconnectedText, const bool isFailure) {
-            std::string prefix = str("[", deviceAlias, "]: ");
+            const std::string prefix = str("[", deviceAlias, "]: ");
             if (isFailure) {
                 std::cout << "\r❌ " << prefix << disconnectedText << std::endl;
                 output_command_prompt();
@@ -59,15 +59,16 @@ int main(const int argc, char* argv[]) {
                 std::cout << "\r❎ " << prefix << disconnectedText << std::endl;
             }
         },
-        [](const std::string& deviceAlias, const std::string& errorText, const bool isConnected) {
-            std::string prefix = str("[", deviceAlias, "]: ");
-            std::cout << "\r❌ " << prefix << errorText << std::endl;
+        [](const std::string& deviceAlias, const std::string& errorText, const std::string& sdbusErrorName, const bool isConnected) {
+            const std::string aliasNamePrefix = str("[", deviceAlias, "]: ");
+            const std::string errorNamePostfix = sdbusErrorName.empty() ? "" : str(" [", sdbusErrorName, "]");
+            std::cout << "\r❌ " << aliasNamePrefix << errorText << errorNamePostfix << std::endl;
             if (isConnected) {
                 output_command_prompt();
             }
         },
         [](const std::string& deviceAlias, const std::string& receivedMessage) {
-            std::string prefix = str("[", deviceAlias, "]: ");
+            const std::string prefix = str("[", deviceAlias, "]: ");
             std::cout << "\r🤖 " << prefix << receivedMessage << std::endl;
             output_command_prompt();
         }
