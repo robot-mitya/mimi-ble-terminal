@@ -43,28 +43,32 @@ int main(const int argc, char* argv[]) {
     }
 
     BleUartClient client(
-        [](const std::string& connectedText, const bool afterFailure) {
-            std::cout << "\r✅ " << connectedText << std::endl;
+        [](const std::string& deviceAlias, const std::string& connectedText, const bool afterFailure) {
+            std::string prefix = str("[", deviceAlias, "]: ");
+            std::cout << "\r✅ " << prefix << connectedText << std::endl;
             if (afterFailure) {
                 output_command_prompt();
             }
         },
-        [](const std::string& disconnectedText, const bool isFailure) {
+        [](const std::string& deviceAlias, const std::string& disconnectedText, const bool isFailure) {
+            std::string prefix = str("[", deviceAlias, "]: ");
             if (isFailure) {
-                std::cout << "\r❌ " << disconnectedText << std::endl;
+                std::cout << "\r❌ " << prefix << disconnectedText << std::endl;
                 output_command_prompt();
             } else {
-                std::cout << "\r❎ " << disconnectedText << std::endl;
+                std::cout << "\r❎ " << prefix << disconnectedText << std::endl;
             }
         },
-        [](const std::string& errorText, const bool isConnected) {
-            std::cout << "\r❌ " << errorText << std::endl;
+        [](const std::string& deviceAlias, const std::string& errorText, const bool isConnected) {
+            std::string prefix = str("[", deviceAlias, "]: ");
+            std::cout << "\r❌ " << prefix << errorText << std::endl;
             if (isConnected) {
                 output_command_prompt();
             }
         },
-        [](const std::string& receivedMessage) {
-            std::cout << "\r🤖 " << receivedMessage << std::endl;
+        [](const std::string& deviceAlias, const std::string& receivedMessage) {
+            std::string prefix = str("[", deviceAlias, "]: ");
+            std::cout << "\r🤖 " << prefix << receivedMessage << std::endl;
             output_command_prompt();
         }
     );

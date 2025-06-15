@@ -1,21 +1,11 @@
 // ReSharper disable CppTooWideScopeInitStatement
 #include "ble_uart_client.h"
-
 #include <iomanip>
-#include <iostream>
 #include <thread>
 #include <utility>
 #include <sdbus-c++/sdbus-c++.h>
 
 using namespace sdbus;
-
-template<typename... Args>
-std::string str(Args&&... args)
-{
-    std::ostringstream oss;
-    (oss << ... << std::forward<Args>(args));
-    return oss.str();
-}
 
 BleUartClient::BleUartClient(
         ConnectCallback connectCallback,
@@ -289,20 +279,20 @@ void BleUartClient::processCallbacks() {
 
 void BleUartClient::postConnect(const std::string& message, const bool afterFailure) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { connectCallback_(message, afterFailure); });
+    callbackQueue_.emplace([=] { connectCallback_(deviceAlias_, message, afterFailure); });
 }
 
 void BleUartClient::postDisconnect(const std::string& message, const bool isFailure) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { disconnectCallback_(message, isFailure); });
+    callbackQueue_.emplace([=] { disconnectCallback_(deviceAlias_, message, isFailure); });
 }
 
 void BleUartClient::postReceive(const std::string& message) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { receiveCallback_(message); });
+    callbackQueue_.emplace([=] { receiveCallback_(deviceAlias_, message); });
 }
 
 void BleUartClient::postError(const std::string& message, const bool isConnected) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { errorCallback_(message, isConnected); });
+    callbackQueue_.emplace([=] { errorCallback_(deviceAlias_, message, isConnected); });
 }

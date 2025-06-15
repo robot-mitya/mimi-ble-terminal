@@ -5,8 +5,17 @@
 #include <vector>
 #include <functional>
 #include <queue>
+#include <sstream>
 #include <sdbus-c++/IConnection.h>
 #include <sdbus-c++/IProxy.h>
+
+template<typename... Args>
+std::string str(Args&&... args)
+{
+    std::ostringstream oss;
+    (oss << ... << std::forward<Args>(args));
+    return oss.str();
+}
 
 struct PairedDevice {
     std::string alias;
@@ -16,10 +25,10 @@ struct PairedDevice {
 
 class BleUartClient {
 public:
-    using ConnectCallback = std::function<void(const std::string&, bool afterFailure)>;
-    using DisconnectCallback = std::function<void(const std::string&, bool isFailure)>;
-    using ErrorCallback = std::function<void(const std::string&, bool isConnected)>;
-    using ReceiveCallback = std::function<void(const std::string&)>;
+    using ConnectCallback = std::function<void(const std::string&, const std::string&, bool afterFailure)>;
+    using DisconnectCallback = std::function<void(const std::string&, const std::string&, bool isFailure)>;
+    using ErrorCallback = std::function<void(const std::string&, const std::string&, bool isConnected)>;
+    using ReceiveCallback = std::function<void(const std::string&, const std::string&)>;
 
     BleUartClient(
         ConnectCallback connectCallback,
