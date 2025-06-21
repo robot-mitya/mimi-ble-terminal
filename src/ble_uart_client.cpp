@@ -16,12 +16,25 @@ BleUartClient::~BleUartClient() {
 void BleUartClient::setCallbacks(
         ConnectCallback connectCallback,
         DisconnectCallback disconnectCallback,
+        StateChangedCallback stateChangedCallback,
         ErrorCallback errorCallback,
         ReceiveCallback receiveCallback) {
     connectCallback_ = std::move(connectCallback);
     disconnectCallback_ = std::move(disconnectCallback);
+    stateChangedCallback_ = std::move(stateChangedCallback);
     errorCallback_ = std::move(errorCallback);
     receiveCallback_ = std::move(receiveCallback);
+}
+
+BleUartClient::State BleUartClient::getState() const {
+    return state_;
+}
+
+void BleUartClient::setState(const State& state) {
+    if (state == state_) return;
+    state_ = state;
+    postStateChanged(state);
+    processCallbacks();
 }
 
 std::vector<PairedDevice> BleUartClient::listPairedDevices() {
@@ -61,21 +74,25 @@ std::vector<PairedDevice> BleUartClient::listPairedDevices() {
 }
 
 bool BleUartClient::connect(const std::string& alias, const bool keepConnection) {
-    if (isConnected_) return true;
+    if (state_ != State::Disconnected) return true;
     deviceAlias_ = alias;
     keepConnection_ = keepConnection;
     const bool successfullyConnected = doConnect();
     if (!successfullyConnected && keepConnection_) {
-        isConnected_ = true;
+        setState(State::Connected);
         processCallbacks();
         startReconnectLoop();
         return true;
     }
     if (successfullyConnected) {
+        setState(State::Connected);
         postConnect(str("Connected to \'", deviceAlias_, "\'"), false);
+        processCallbacks();
+        return true;
     }
-    isConnected_ = successfullyConnected;
-    return successfullyConnected;
+    setState(State::Disconnected);
+    processCallbacks();
+    return false;
 }
 
 bool BleUartClient::findDevice(std::vector<PairedDevice> pairedDevices, PairedDevice& pairedDevice) {
@@ -83,7 +100,7 @@ bool BleUartClient::findDevice(std::vector<PairedDevice> pairedDevices, PairedDe
         return d.alias == deviceAlias_;
     });
     if (device == pairedDevices.end()) {
-        postError(str("Device with alias '", deviceAlias_, "' not found"), "", isConnected_); //❌
+        postError(str("Device with alias '", deviceAlias_, "' not found"), "", state_); //❌
         return false;
     }
     pairedDevice = *device;
@@ -97,7 +114,7 @@ bool BleUartClient::connectGatt(const PairedDevice &pairedDevice) {
     try {
         deviceProxy_->callMethod("Connect").onInterface("org.bluez.Device1");
     } catch (const Error& e) {
-        postError(str("Failed to connect: ", e.getMessage()), e.getName(), isConnected_); //❌
+        postError(str("Failed to connect: ", e.getMessage()), e.getName(), state_); //❌
         return false;
     }
     connection_->enterEventLoopAsync();
@@ -137,7 +154,7 @@ bool BleUartClient::discoverCharacteristics() {
     }
 
     if (txCharPath_.empty() || rxCharPath_.empty()) {
-        postError(str("TX or RX characteristic not found"), "", isConnected_); //❌
+        postError(str("TX or RX characteristic not found"), "", state_); //❌
         return false;
     }
 
@@ -177,7 +194,7 @@ bool BleUartClient::setupReceiveNotifications() {
     try {
         rxProxy_->callMethod("StartNotify").onInterface("org.bluez.GattCharacteristic1");
     } catch (const Error& e) {
-        postError(str("Failed to start notifications: ", e.getMessage()), e.getName(), isConnected_); //❌
+        postError(str("Failed to start notifications: ", e.getMessage()), e.getName(), state_); //❌
         return false;
     }
 
@@ -221,16 +238,16 @@ bool BleUartClient::doConnect() {
 }
 
 void BleUartClient::startReconnectLoop() {
-    if (reconnecting_) return;
-    reconnecting_ = true;
+    if (state_ != State::Connected) return;
+    setState(State::Reconnecting);
 
     reconnectThread_ = std::thread([this] {
-        while (keepConnection_) {
+        while (keepConnection_ && state_ == State::Reconnecting) {
             std::this_thread::sleep_for(std::chrono::seconds(ReconnectIntervalInSeconds));
 
-            if (isConnected_ && doConnect()) {
+            if (state_ == State::Reconnecting && doConnect()) {
                 postConnect(str("Reconnected to \'", deviceAlias_, "\'"), true);
-                reconnecting_ = false;
+                setState(State::Connected);
                 return;
             }
         }
@@ -240,7 +257,7 @@ void BleUartClient::startReconnectLoop() {
 }
 
 bool BleUartClient::disconnect() {
-    if (!isConnected_) return false;
+    if (state_ == State::Disconnected) return false;
 
     if (rxProxy_) {
         try {
@@ -256,17 +273,15 @@ bool BleUartClient::disconnect() {
         deviceProxy_.reset();
     }
 
-    isConnected_ = false;
-    if (!reconnecting_) {
-        postDisconnect(str("Disconnected from \'", deviceAlias_, "\'"), false);
-        processCallbacks();
-    }
+    setState(State::Disconnected);
+    postDisconnect(str("Disconnected from \'", deviceAlias_, "\'"), false);
+    processCallbacks();
     return true;
 }
 
 bool BleUartClient::send(const std::string& text) {
-    if (!isConnected_ || reconnecting_ || txCharPath_.empty()) {
-        postError("Not connected", "", isConnected_); //❌
+    if (state_ != State::Connected || txCharPath_.empty()) {
+        postError("Not connected", "", state_); //❌
         return false;
     }
 
@@ -291,7 +306,7 @@ bool BleUartClient::send(const std::string& text) {
 
         return true;
     } catch (const Error& e) {
-        postError(str("Send failed: ", e.getMessage()), e.getName(), isConnected_); //❌
+        postError(str("Send failed: ", e.getMessage()), e.getName(), state_); //❌
         return false;
     }
 }
@@ -318,12 +333,17 @@ void BleUartClient::postDisconnect(const std::string& message, const bool isFail
     callbackQueue_.emplace([=] { if (disconnectCallback_) disconnectCallback_(deviceAlias_, message, isFailure); });
 }
 
+void BleUartClient::postStateChanged(const State& state) {
+    std::lock_guard lock(callbackQueueMutex_);
+    callbackQueue_.emplace([=] { if (stateChangedCallback_) stateChangedCallback_(deviceAlias_, state); });
+}
+
 void BleUartClient::postReceive(const std::string& message) {
     std::lock_guard lock(callbackQueueMutex_);
     callbackQueue_.emplace([=] { if (receiveCallback_) receiveCallback_(deviceAlias_, message); });
 }
 
-void BleUartClient::postError(const std::string& message, const std::string& sdbusErrorName, const bool isConnected) {
+void BleUartClient::postError(const std::string& message, const std::string& sdbusErrorName, const State& state) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { if (errorCallback_) errorCallback_(deviceAlias_, message, sdbusErrorName, isConnected); });
+    callbackQueue_.emplace([=] { if (errorCallback_) errorCallback_(deviceAlias_, message, sdbusErrorName, state); });
 }

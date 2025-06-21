@@ -62,11 +62,20 @@ int main(const int argc, char* argv[]) {
                 std::cout << "\r❎ " << prefix << disconnectedText << std::endl;
             }
         },
-        [](const std::string& deviceAlias, const std::string& errorText, const std::string& sdbusErrorName, const bool isConnected) {
+        // [](const std::string& deviceAlias, const BleUartClient::State& state) {
+        //     const std::string prefix = str("[", deviceAlias, "]: ");
+        //     std::cout << "\rℹ️ " << prefix << "State changed to " << BleUartClient::stateToString(state) << std::endl;
+        //     if (state != BleUartClient::State::Disconnected) {
+        //         output_command_prompt();
+        //     }
+        // },
+        [](const std::string&, const BleUartClient::State&) {
+        },
+        [](const std::string& deviceAlias, const std::string& errorText, const std::string& sdbusErrorName, const BleUartClient::State& state) {
             const std::string aliasNamePrefix = str("[", deviceAlias, "]: ");
             const std::string errorNamePostfix = sdbusErrorName.empty() ? "" : str(" [", sdbusErrorName, "]");
             std::cout << "\r❌ " << aliasNamePrefix << errorText << errorNamePostfix << std::endl;
-            if (isConnected) {
+            if (state != BleUartClient::State::Disconnected) {
                 output_command_prompt();
             }
         },
