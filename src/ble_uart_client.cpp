@@ -290,7 +290,7 @@ bool BleUartClient::send(const std::string& text) {
 
     try {
         constexpr long maxChunkSize = 19;
-        for (long offset = 0; offset < text.size(); offset += maxChunkSize) {
+        for (long offset = 0; offset < static_cast<long>(text.size()); offset += maxChunkSize) {
             if (offset > 0) {
                 // Make a pause between chunks:
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));

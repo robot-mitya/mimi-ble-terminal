@@ -1,7 +1,6 @@
 #ifndef BLE_UART_CLIENT_H
 #define BLE_UART_CLIENT_H
 
-#include <string>
 #include <vector>
 #include <functional>
 #include <queue>
@@ -55,7 +54,7 @@ public:
     [[nodiscard]] bool send(const std::string& text);
     void processCallbacks();
 
-    static constexpr  std::string_view stateToString(const State& state) {
+    static const char* stateToString(const State& state) {
         switch (state) {
             case State::Disconnected: return "Disconnected";
             case State::Connected:    return "Connected";
