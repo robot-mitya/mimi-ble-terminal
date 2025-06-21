@@ -8,19 +8,20 @@
 using namespace sdbus;
 using namespace mimi;
 
-BleUartClient::BleUartClient(
-        ConnectCallback connectCallback,
-        DisconnectCallback disconnectCallback,
-        ErrorCallback errorCallback,
-        ReceiveCallback receiveCallback) :
-    connectCallback_(std::move(connectCallback)),
-    disconnectCallback_(std::move(disconnectCallback)),
-    errorCallback_(std::move(errorCallback)),
-    receiveCallback_(std::move(receiveCallback)) {}
-
 BleUartClient::~BleUartClient() {
     disconnect();
     delete connection_;
+}
+
+void BleUartClient::setCallbacks(
+        ConnectCallback connectCallback,
+        DisconnectCallback disconnectCallback,
+        ErrorCallback errorCallback,
+        ReceiveCallback receiveCallback) {
+    connectCallback_ = std::move(connectCallback);
+    disconnectCallback_ = std::move(disconnectCallback);
+    errorCallback_ = std::move(errorCallback);
+    receiveCallback_ = std::move(receiveCallback);
 }
 
 std::vector<PairedDevice> BleUartClient::listPairedDevices() {
@@ -264,7 +265,7 @@ bool BleUartClient::disconnect() {
 }
 
 bool BleUartClient::send(const std::string& text) {
-    if (!isConnected_ || txCharPath_.empty()) {
+    if (!isConnected_ || reconnecting_ || txCharPath_.empty()) {
         postError("Not connected", "", isConnected_); //❌
         return false;
     }
@@ -309,20 +310,20 @@ void BleUartClient::processCallbacks() {
 
 void BleUartClient::postConnect(const std::string& message, const bool afterFailure) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { connectCallback_(deviceAlias_, message, afterFailure); });
+    callbackQueue_.emplace([=] { if (connectCallback_) connectCallback_(deviceAlias_, message, afterFailure); });
 }
 
 void BleUartClient::postDisconnect(const std::string& message, const bool isFailure) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { disconnectCallback_(deviceAlias_, message, isFailure); });
+    callbackQueue_.emplace([=] { if (disconnectCallback_) disconnectCallback_(deviceAlias_, message, isFailure); });
 }
 
 void BleUartClient::postReceive(const std::string& message) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { receiveCallback_(deviceAlias_, message); });
+    callbackQueue_.emplace([=] { if (receiveCallback_) receiveCallback_(deviceAlias_, message); });
 }
 
 void BleUartClient::postError(const std::string& message, const std::string& sdbusErrorName, const bool isConnected) {
     std::lock_guard lock(callbackQueueMutex_);
-    callbackQueue_.emplace([=] { errorCallback_(deviceAlias_, message, sdbusErrorName, isConnected); });
+    callbackQueue_.emplace([=] { if (errorCallback_) errorCallback_(deviceAlias_, message, sdbusErrorName, isConnected); });
 }

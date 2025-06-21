@@ -44,7 +44,8 @@ int main(const int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    BleUartClient client(
+    BleUartClient client;
+    client.setCallbacks(
         [](const std::string& deviceAlias, const std::string& connectedText, const bool afterFailure) {
             const std::string prefix = str("[", deviceAlias, "]: ");
             std::cout << "\r✅ " << prefix << connectedText << std::endl;

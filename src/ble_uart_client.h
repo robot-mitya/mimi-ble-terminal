@@ -32,12 +32,13 @@ public:
     using ErrorCallback = std::function<void(const std::string&, const std::string&, const std::string&, bool isConnected)>;
     using ReceiveCallback = std::function<void(const std::string&, const std::string&)>;
 
-    BleUartClient(
+    ~BleUartClient();
+
+    void setCallbacks(
         ConnectCallback connectCallback,
         DisconnectCallback disconnectCallback,
         ErrorCallback errorCallback,
         ReceiveCallback receiveCallback);
-    ~BleUartClient();
 
     static std::vector<PairedDevice> listPairedDevices();
     bool connect(const std::string& alias, bool keepConnection);
@@ -46,10 +47,10 @@ public:
     [[nodiscard]] bool send(const std::string& text);
     void processCallbacks();
 private:
-    ConnectCallback connectCallback_;
-    DisconnectCallback disconnectCallback_;
-    ErrorCallback errorCallback_;
-    ReceiveCallback receiveCallback_;
+    ConnectCallback connectCallback_ = nullptr;
+    DisconnectCallback disconnectCallback_ = nullptr;
+    ErrorCallback errorCallback_ = nullptr;
+    ReceiveCallback receiveCallback_ = nullptr;
 
     std::string deviceAlias_;
     bool keepConnection_ = false;
